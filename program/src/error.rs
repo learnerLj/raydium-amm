@@ -1,4 +1,9 @@
 //! Error types
+//!
+//! This module defines all error types that can occur during AMM operations.
+//! Each error has a unique identifier and descriptive message to help with
+//! debugging and user feedback. The errors cover validation failures,
+//! mathematical overflow/underflow, insufficient funds, and various operational issues.
 
 use num_derive::FromPrimitive;
 use solana_program::{
@@ -8,9 +13,20 @@ use solana_program::{
 };
 use thiserror::Error;
 
-/// Errors that may be returned by the TokenAmm program.
+/// Comprehensive error enumeration for the Raydium AMM program
+///
+/// This enum defines all possible error conditions that can occur during
+/// AMM operations. Each variant has a unique numeric identifier and
+/// descriptive error message for debugging and user feedback.
+///
+/// Error categories:
+/// - Account validation errors (0-24)
+/// - Mathematical operation errors (25-39) 
+/// - Token/vault validation errors (40-54)
+/// - Configuration and status errors (55-59)
 #[derive(Clone, Debug, Eq, Error, FromPrimitive, PartialEq)]
 pub enum AmmError {
+    // === ACCOUNT VALIDATION ERRORS (0-4) ===
     // 0
     /// The account cannot be initialized because it is already being used.
     #[error("AlreadyInUse")]
@@ -28,6 +44,7 @@ pub enum AmmError {
     #[error("InvalidCoinVault")]
     InvalidCoinVault,
 
+    // === VAULT VALIDATION ERRORS (5-9) ===
     // 5
     /// The pc vault provided doesn't match the pc vault in the AmmInfo.
     #[error("InvalidPCVault")]
@@ -45,6 +62,7 @@ pub enum AmmError {
     #[error("InvalidPoolMint")]
     InvalidPoolMint,
 
+    // === MARKET VALIDATION ERRORS (10-14) ===
     // 10
     /// The open_orders provided doesn't match the open_orders in in the AmmInfo.
     #[error("InvalidOpenOrders")]
@@ -62,6 +80,7 @@ pub enum AmmError {
     #[error("AccountNeedWriteable")]
     AccountNeedWriteable,
 
+    // === ACCOUNT PERMISSION ERRORS (15-19) ===
     // 15
     /// The Account provided must be readonly.
     #[error("AccountNeedReadOnly")]
@@ -96,6 +115,7 @@ pub enum AmmError {
     #[error("Wrong accounts number")]
     WrongAccountsNumber,
 
+    // === OWNERSHIP AND ACCESS ERRORS (25-29) ===
     // 25
     /// The target account owner is not match with this program
     #[error("The target account owner is not match with this program")]
@@ -113,6 +133,7 @@ pub enum AmmError {
     #[error("InvalidInput")]
     InvalidInput,
 
+    // === MATHEMATICAL OPERATION ERRORS (30-39) ===
     // 30
     /// instruction exceeds desired slippage limit
     #[error("instruction exceeds desired slippage limit")]
@@ -147,6 +168,7 @@ pub enum AmmError {
     #[error("Take Pnl error")]
     TakePnlError,
 
+    // === TOKEN AND FUND VALIDATION ERRORS (40-49) ===
     // 40
     /// Insufficient funds
     #[error("Insufficient funds")]
@@ -181,6 +203,7 @@ pub enum AmmError {
     #[error("Repeat create amm about market")]
     RepeatCreateAmm,
 
+    // === PROTOCOL SPECIFIC ERRORS (50-59) ===
     // 50
     /// Not allow Zero LP
     #[error("Not allow Zero LP")]
@@ -213,17 +236,31 @@ pub enum AmmError {
     UnknownAmmError,
 }
 
+/// Convert AmmError to Solana's ProgramError
+///
+/// This implementation allows AmmError to be converted into ProgramError
+/// using the custom error variant with the error's numeric identifier.
 impl From<AmmError> for ProgramError {
     fn from(e: AmmError) -> Self {
         ProgramError::Custom(e as u32)
     }
 }
+
+/// Implement DecodeError for AmmError to enable error decoding
+///
+/// This allows the Solana runtime to properly identify and decode
+/// custom AMM errors when they occur.
 impl<T> DecodeError<T> for AmmError {
     fn type_of() -> &'static str {
         "Amm Error"
     }
 }
 
+/// Implement error printing for debugging and logging
+///
+/// This implementation provides detailed error messages that are logged
+/// to Solana's program logs, making it easier for developers to debug
+/// issues during development and production monitoring.
 impl PrintProgramError for AmmError {
     fn print<E>(&self)
     where

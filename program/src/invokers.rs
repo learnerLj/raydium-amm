@@ -1,4 +1,13 @@
-//! Program state invoker
+//! Cross-program invocation utilities
+//!
+//! This module provides safe wrappers for invoking other Solana programs
+//! from within the AMM program. It includes functions for:
+//! - SPL Token operations (transfers, mints, burns)
+//! - Associated Token Account creation
+//! - OpenBook/Serum DEX operations (orders, settlements)
+//!
+//! All functions use program-derived authority (PDA) for secure operation
+//! and include proper signature generation for cross-program calls.
 
 use solana_program::{
     account_info::AccountInfo,
@@ -8,10 +17,31 @@ use solana_program::{
 };
 use std::num::NonZeroU64;
 
+/// Cross-program invocation utility functions
+///
+/// This struct contains static methods for safely invoking external programs
+/// like SPL Token and OpenBook from within the AMM program context.
 pub struct Invokers {}
 
 impl Invokers {
-    /// Issue a associated_spl_token `create_associated_token_account` instruction
+    /// Creates an Associated Token Account (ATA)
+    ///
+    /// This function invokes the Associated Token Program to create a new ATA
+    /// for a specific wallet and token mint. ATAs provide a deterministic
+    /// address for token accounts owned by a wallet.
+    ///
+    /// # Arguments
+    /// * `associated_account` - The ATA account to create
+    /// * `funding_account` - Account that pays for creation (usually user wallet)
+    /// * `wallet_account` - The wallet that will own the ATA
+    /// * `token_mint_account` - The token mint for this ATA
+    /// * `token_program_account` - SPL Token program
+    /// * `ata_program_account` - Associated Token Account program
+    /// * `system_program_account` - System program for account creation
+    ///
+    /// # Returns
+    /// * `Ok(())` - ATA created successfully
+    /// * `Err(ProgramError)` - Creation failed
     pub fn create_ata_spl_token<'a>(
         associated_account: AccountInfo<'a>,
         funding_account: AccountInfo<'a>,
@@ -170,7 +200,25 @@ impl Invokers {
         )
     }
 
-    /// Issue a spl_token `Transfer` instruction.
+    /// Transfers tokens using program authority (PDA)
+    ///
+    /// This function transfers tokens from one account to another using
+    /// the AMM's program-derived authority. This is used for pool operations
+    /// where the AMM needs to move tokens on behalf of users or between
+    /// pool accounts.
+    ///
+    /// # Arguments
+    /// * `token_program` - SPL Token program
+    /// * `source` - Source token account
+    /// * `destination` - Destination token account  
+    /// * `authority` - The AMM's authority (PDA)
+    /// * `amm_seed` - Seed used to derive the authority
+    /// * `nonce` - Authority bump seed
+    /// * `amount` - Amount of tokens to transfer
+    ///
+    /// # Returns
+    /// * `Ok(())` - Transfer completed successfully
+    /// * `Err(ProgramError)` - Transfer failed
     pub fn token_transfer_with_authority<'a>(
         token_program: AccountInfo<'a>,
         source: AccountInfo<'a>,
@@ -424,7 +472,40 @@ impl Invokers {
         solana_program::program::invoke_signed(&ix, &accounts, signers)
     }
 
-    /// Issue a dex `NewOrder` instruction.
+    /// Places a new order on the OpenBook DEX
+    ///
+    /// This function creates and places a new limit order on the OpenBook
+    /// orderbook. The AMM uses this to provide liquidity by placing orders
+    /// at calculated price points around the current market price.
+    ///
+    /// # Arguments
+    /// * `dex_program` - OpenBook program ID
+    /// * `market` - Market account for the trading pair
+    /// * `open_orders` - AMM's open orders account on this market
+    /// * `req_q` - Market's request queue
+    /// * `event_q` - Market's event queue
+    /// * `bids` - Market's bids orderbook
+    /// * `asks` - Market's asks orderbook
+    /// * `payer` - Token account that pays for the order
+    /// * `open_orders_owner` - Owner of the open orders (AMM authority)
+    /// * `coin_vault` - Market's base token vault
+    /// * `pc_vault` - Market's quote token vault
+    /// * `token_program` - SPL Token program
+    /// * `rent_account` - Rent sysvar
+    /// * `srm_account_referral` - Optional SRM account for fee discounts
+    /// * `amm_seed` - Seed for AMM authority derivation
+    /// * `nonce` - Authority bump seed
+    /// * `side` - Order side (buy/sell)
+    /// * `limit_price` - Maximum price for buy orders, minimum for sell orders
+    /// * `max_coin_qty` - Maximum base token quantity
+    /// * `max_native_pc_qty_including_fees` - Maximum quote including fees
+    /// * `order_type` - Order type (limit, ioc, post_only)
+    /// * `client_order_id` - Unique client-side order identifier
+    /// * `limit` - Maximum orders to place/cancel in this operation
+    ///
+    /// # Returns
+    /// * `Ok(())` - Order placed successfully
+    /// * `Err(ProgramError)` - Order placement failed
     pub fn invoke_dex_new_order_v3<'a>(
         dex_program: AccountInfo<'a>,
         market: AccountInfo<'a>,
@@ -587,7 +668,30 @@ impl Invokers {
         solana_program::program::invoke_signed(&ix, &accounts, signers)
     }
 
-    /// Issue a dex `SettleFunds` instruction.
+    /// Settles funds from completed orders on OpenBook
+    ///
+    /// This function settles the proceeds from filled orders, transferring
+    /// tokens from the market's vaults to the AMM's token accounts. This is
+    /// necessary after orders are filled to claim the exchanged tokens.
+    ///
+    /// # Arguments
+    /// * `dex_program` - OpenBook program ID
+    /// * `market` - Market account
+    /// * `open_orders` - AMM's open orders account
+    /// * `owner` - Owner of the open orders (AMM authority)
+    /// * `coin_vault` - Market's base token vault
+    /// * `pc_vault` - Market's quote token vault
+    /// * `coin_wallet` - AMM's base token account to receive proceeds
+    /// * `pc_wallet` - AMM's quote token account to receive proceeds
+    /// * `vault_signer` - Market's vault signer (PDA)
+    /// * `spl_token_program` - SPL Token program
+    /// * `referrer_pc_wallet` - Optional referrer account for rebates
+    /// * `amm_seed` - Seed for AMM authority derivation
+    /// * `nonce` - Authority bump seed
+    ///
+    /// # Returns
+    /// * `Ok(())` - Funds settled successfully
+    /// * `Err(ProgramError)` - Settlement failed
     pub fn invoke_dex_settle_funds<'a>(
         dex_program: AccountInfo<'a>,
         market: AccountInfo<'a>,

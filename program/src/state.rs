@@ -1,4 +1,15 @@
-//! State transition types
+//! State structures and account management
+//!
+//! This module defines all account state structures used by the AMM program,
+//! including:
+//! - Pool state (AmmInfo) with comprehensive trading and fee information
+//! - Configuration accounts for global parameters
+//! - Target orders for OpenBook integration
+//! - Fee structures and validation logic
+//! - Account loading and validation utilities
+//!
+//! All structures use efficient memory layouts and include proper
+//! validation to ensure data integrity and prevent common vulnerabilities.
 
 use crate::{error::AmmError, math::Calculator};
 use serum_dex::state::ToAlignedBytes;
@@ -20,7 +31,10 @@ use std::{
     mem::size_of,
 };
 
+/// Constant for percentage calculations (100.00%)
 pub const TEN_THOUSAND: u64 = 10000;
+
+/// Maximum number of orders that can be processed in a single operation
 pub const MAX_ORDER_LIMIT: usize = 10;
 
 #[cfg(not(test))]
@@ -633,6 +647,12 @@ impl StateData {
     }
 }
 
+/// Main AMM pool state account
+///
+/// This structure stores all information about an AMM pool, including
+/// token vaults, fee configurations, market integration details,
+/// and operational statistics. It represents the core state of each
+/// trading pair in the AMM system.
 #[cfg_attr(feature = "client", derive(Debug))]
 #[repr(C, packed)]
 #[derive(Clone, Copy, Default, PartialEq)]

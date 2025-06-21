@@ -1,4 +1,35 @@
-//! Program state processor
+//! Core instruction processor and business logic
+//!
+//! This module contains the main instruction processing logic for the Raydium AMM.
+//! It handles all instruction types including:
+//!
+//! ## Pool Management
+//! - `process_initialize2`: Creates new AMM pools with initial liquidity
+//! - `process_set_params`: Updates pool parameters and configurations
+//! - `process_migrate_to_openbook`: Migrates markets to new OpenBook version
+//!
+//! ## Liquidity Operations  
+//! - `process_deposit`: Adds liquidity to pools and mints LP tokens
+//! - `process_withdraw`: Removes liquidity and burns LP tokens
+//! - `process_withdraw_pnl`: Withdraws protocol fees from order book profits
+//!
+//! ## Trading Operations
+//! - `process_swap_base_in`: Executes swaps with exact input amounts
+//! - `process_swap_base_out`: Executes swaps with exact output amounts
+//!
+//! ## Order Book Integration
+//! - `process_monitor_step`: Manages OpenBook order placement and lifecycle
+//! - Order calculation, placement, cancellation, and settlement
+//! - Fibonacci-based liquidity distribution
+//!
+//! ## Administrative Functions
+//! - Configuration account management
+//! - Parameter validation and updates
+//! - Emergency controls and status management
+//!
+//! All operations include comprehensive validation, slippage protection,
+//! and detailed event logging for monitoring and analytics.
+
 #![allow(deprecated)]
 use crate::{
     error::AmmError,

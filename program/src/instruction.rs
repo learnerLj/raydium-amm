@@ -1,4 +1,14 @@
 //! Instruction types
+//!
+//! This module defines all instruction types for the Raydium AMM program.
+//! Instructions are the operations that can be performed on the AMM, including:
+//! - Pool initialization and management
+//! - Liquidity provision (deposit/withdraw)
+//! - Token swapping with slippage protection
+//! - Administrative operations and parameter updates
+//! - Market migration and monitoring operations
+//!
+//! Each instruction has its own data structure and serialization/deserialization logic.
 
 #![allow(clippy::too_many_arguments)]
 #![allow(deprecated)]
@@ -15,6 +25,10 @@ use solana_program::{
 use std::convert::TryInto;
 use std::mem::size_of;
 
+/// Legacy initialization instruction (deprecated)
+///
+/// This instruction structure was used in earlier versions of the AMM.
+/// New pools should use Initialize2 instead for better functionality.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct InitializeInstruction {
@@ -24,16 +38,21 @@ pub struct InitializeInstruction {
     pub open_time: u64,
 }
 
+/// Current pool initialization instruction
+///
+/// This instruction initializes a new AMM pool with specified initial liquidity.
+/// It creates the pool state, sets up token vaults, and establishes the initial
+/// price ratio based on the provided token amounts.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct InitializeInstruction2 {
     /// nonce used to create valid program address
     pub nonce: u8,
-    /// utc timestamps for pool open
+    /// utc timestamps for pool open (when trading becomes active)
     pub open_time: u64,
-    /// init token pc amount
+    /// initial PC (quote token) amount to deposit
     pub init_pc_amount: u64,
-    /// init token coin amount
+    /// initial coin (base token) amount to deposit
     pub init_coin_amount: u64,
 }
 
@@ -53,24 +72,37 @@ pub struct MonitorStepInstruction {
     pub cancel_order_limit: u16,
 }
 
+/// Deposit liquidity instruction
+///
+/// This instruction allows users to provide liquidity to the AMM pool
+/// by depositing both tokens in the current pool ratio. In return,
+/// users receive LP (Liquidity Provider) tokens representing their share.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct DepositInstruction {
-    /// Pool token amount to transfer. token_a and token_b amount are set by
-    /// the current exchange rate and size of the pool
+    /// Maximum coin (base token) amount user is willing to deposit
     pub max_coin_amount: u64,
+    /// Maximum PC (quote token) amount user is willing to deposit  
     pub max_pc_amount: u64,
+    /// Which token side to use as the base for calculation (0=coin, 1=pc)
     pub base_side: u64,
+    /// Minimum amount of the other token (slippage protection)
     pub other_amount_min: Option<u64>,
 }
 
+/// Withdraw liquidity instruction  
+///
+/// This instruction allows users to withdraw their liquidity from the pool
+/// by burning their LP tokens in exchange for the underlying token pair
+/// in the current pool ratio.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct WithdrawInstruction {
-    /// Pool token amount to transfer. token_a and token_b amount are set by
-    /// the current exchange rate and size of the pool
+    /// Amount of LP tokens to burn for withdrawal
     pub amount: u64,
+    /// Minimum coin amount to receive (slippage protection)
     pub min_coin_amount: Option<u64>,
+    /// Minimum PC amount to receive (slippage protection)
     pub min_pc_amount: Option<u64>,
 }
 
@@ -90,21 +122,31 @@ pub struct WithdrawSrmInstruction {
     pub amount: u64,
 }
 
+/// Swap instruction with exact input amount
+///
+/// This instruction performs a token swap where the user specifies exactly
+/// how much of the input token they want to trade. The output amount is
+/// calculated based on the current pool state and AMM formula.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct SwapInstructionBaseIn {
-    // SOURCE amount to transfer, output to DESTINATION is based on the exchange rate
+    /// Exact amount of source token to swap
     pub amount_in: u64,
-    /// Minimum amount of DESTINATION token to output, prevents excessive slippage
+    /// Minimum amount of destination token to receive (slippage protection)
     pub minimum_amount_out: u64,
 }
 
+/// Swap instruction with exact output amount
+///
+/// This instruction performs a token swap where the user specifies exactly
+/// how much of the output token they want to receive. The input amount is
+/// calculated based on the current pool state and AMM formula.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct SwapInstructionBaseOut {
-    // SOURCE amount to transfer, output to DESTINATION is based on the exchange rate
+    /// Maximum amount of source token willing to pay (slippage protection)
     pub max_amount_in: u64,
-    /// Minimum amount of DESTINATION token to output, prevents excessive slippage
+    /// Exact amount of destination token to receive
     pub amount_out: u64,
 }
 
@@ -131,7 +173,18 @@ pub struct ConfigArgs {
     pub create_pool_fee: Option<u64>,
 }
 
-/// Instructions supported by the AmmInfo program.
+/// All instructions supported by the Raydium AMM program
+///
+/// This enum defines every operation that can be performed on the AMM.
+/// Each variant corresponds to a specific instruction type with its own
+/// account requirements and parameter validation.
+///
+/// Instructions are categorized as:
+/// - Pool Management: Initialize2, SetParams, MigrateToOpenBook
+/// - Liquidity Operations: Deposit, Withdraw, WithdrawPnl
+/// - Trading Operations: SwapBaseIn, SwapBaseOut  
+/// - Monitoring: MonitorStep, SimulateInfo
+/// - Administration: CreateConfigAccount, UpdateConfigAccount, AdminCancelOrders
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum AmmInstruction {
@@ -372,7 +425,18 @@ pub enum AmmInstruction {
 }
 
 impl AmmInstruction {
-    /// Unpacks a byte buffer into a [AmmInstruction](enum.AmmInstruction.html).
+    /// Deserializes instruction data from raw bytes
+    ///
+    /// This function parses the instruction data sent from clients and converts
+    /// it into the appropriate AmmInstruction variant. The first byte determines
+    /// the instruction type, followed by the specific parameters for that instruction.
+    ///
+    /// # Arguments
+    /// * `input` - Raw instruction data bytes from the transaction
+    ///
+    /// # Returns
+    /// * `Ok(AmmInstruction)` - Successfully parsed instruction
+    /// * `Err(ProgramError)` - Invalid instruction data or unknown instruction type
     pub fn unpack(input: &[u8]) -> Result<Self, ProgramError> {
         let (&tag, rest) = input
             .split_first()
@@ -642,7 +706,15 @@ impl AmmInstruction {
         }
     }
 
-    /// Packs a [AmmInstruction](enum.AmmInstruction.html) into a byte buffer.
+    /// Serializes an AmmInstruction into bytes for transmission
+    ///
+    /// This function converts an AmmInstruction into the binary format
+    /// required for Solana transactions. Each instruction type has a unique
+    /// identifier byte followed by its specific parameter encoding.
+    ///
+    /// # Returns
+    /// * `Ok(Vec<u8>)` - Serialized instruction data
+    /// * `Err(ProgramError)` - Serialization error (e.g., invalid parameters)
     pub fn pack(&self) -> Result<Vec<u8>, ProgramError> {
         let mut buf = Vec::with_capacity(size_of::<Self>());
         match &*self {
@@ -842,7 +914,39 @@ impl AmmInstruction {
     }
 }
 
-/// Creates an 'initialize2' instruction.
+/// Creates an Initialize2 instruction for new AMM pool creation
+///
+/// This function builds a complete instruction for initializing a new AMM pool
+/// with all required accounts and parameters. It sets up the pool state,
+/// token vaults, LP mint, and initial liquidity.
+///
+/// # Arguments
+/// * `amm_program` - The AMM program ID
+/// * `amm_pool` - The AMM pool account to create
+/// * `amm_authority` - The pool's authority (PDA)
+/// * `amm_open_orders` - OpenBook open orders account
+/// * `amm_lp_mint` - LP token mint account
+/// * `amm_coin_mint` - Base token mint
+/// * `amm_pc_mint` - Quote token mint  
+/// * `amm_coin_vault` - Pool's base token vault
+/// * `amm_pc_vault` - Pool's quote token vault
+/// * `amm_target_orders` - Target orders account for order book integration
+/// * `amm_config` - Global AMM configuration account
+/// * `create_fee_destination` - Account to receive pool creation fees
+/// * `market_program` - OpenBook program ID
+/// * `market` - OpenBook market account
+/// * `user_wallet` - Pool creator's wallet
+/// * `user_token_coin` - User's base token account
+/// * `user_token_pc` - User's quote token account  
+/// * `user_token_lp` - User's LP token account (to receive initial LP tokens)
+/// * `nonce` - Authority PDA bump seed
+/// * `open_time` - When the pool becomes tradeable
+/// * `init_pc_amount` - Initial quote token amount
+/// * `init_coin_amount` - Initial base token amount
+///
+/// # Returns
+/// * `Ok(Instruction)` - Complete instruction ready for transaction
+/// * `Err(ProgramError)` - Parameter validation error
 pub fn initialize2(
     amm_program: &Pubkey,
     amm_pool: &Pubkey,

@@ -1,4 +1,17 @@
-//! Defines PreciseNumber, a U256 wrapper with float-like operations
+//! Mathematical operations and calculations for AMM functionality
+//!
+//! This module provides all mathematical operations required for the AMM,
+//! including:
+//! - Constant product AMM calculations (x * y = k)
+//! - Price and volume conversions between internal and market formats
+//! - Fibonacci sequence generation for order placement
+//! - Decimal normalization and precision handling
+//! - Token swap calculations with slippage protection
+//! - PnL calculations for order book integration
+//!
+//! Uses high-precision arithmetic (U256, U128) to prevent overflow
+//! and maintain accuracy in financial calculations.
+
 #![allow(clippy::assign_op_pattern)]
 #![allow(clippy::ptr_offset_with_cast)]
 #![allow(clippy::unknown_clippy_lints)]
@@ -14,19 +27,26 @@ use solana_program::{account_info::AccountInfo, log::sol_log_compute_units, msg}
 use std::{cmp::Eq, convert::identity, convert::TryInto};
 use uint::construct_uint;
 
+/// 256-bit unsigned integer for high-precision calculations
 construct_uint! {
     pub struct U256(4);
 }
+
+/// 128-bit unsigned integer for medium-precision calculations
 construct_uint! {
     pub struct U128(2);
 }
 
+/// Enumeration for token swap directions
+///
+/// Defines the two possible directions for token swaps in the AMM,
+/// used to determine which token is being sold and which is being bought.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u64)]
 pub enum SwapDirection {
-    /// Input token pc, output token coin
+    /// Swap PC (quote) token for Coin (base) token
     PC2Coin = 1u64,
-    /// Input token coin, output token pc
+    /// Swap Coin (base) token for PC (quote) token  
     Coin2PC = 2u64,
 }
 
@@ -41,6 +61,11 @@ pub enum RoundDirection {
     Ceiling,
 }
 
+/// Main calculation engine for AMM mathematical operations
+///
+/// This struct provides static methods for all mathematical operations
+/// required by the AMM, including swap calculations, price conversions,
+/// and precision handling.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Calculator {}
 
@@ -65,7 +90,17 @@ impl Calculator {
         x_power
     }
 
-    // out: 0, 1, 2, 3, 5, 8, 13, 21, 34, 55
+    /// Generates Fibonacci sequence for order placement strategy
+    ///
+    /// Creates a Fibonacci sequence used to determine the distribution
+    /// of liquidity orders in the OpenBook orderbook. The sequence
+    /// provides natural spacing for order placement.
+    ///
+    /// # Arguments
+    /// * `order_num` - Number of Fibonacci numbers to generate
+    ///
+    /// # Returns
+    /// * `Vec<u64>` - Fibonacci sequence: [0, 1, 2, 3, 5, 8, 13, 21, 34, 55...]
     pub fn fibonacci(order_num: u64) -> Vec<u64> {
         let mut fb = Vec::new();
         for i in 0..order_num {
@@ -371,6 +406,20 @@ impl Calculator {
         Self::to_u64(max_size.as_u128()).unwrap()
     }
 
+    /// Calculates output amount for exact input swap using constant product formula
+    ///
+    /// Implements the core AMM calculation: given an exact input amount,
+    /// determines how much of the output token will be received.
+    /// Uses the constant product formula: (x + Δx) * (y - Δy) = x * y
+    ///
+    /// # Arguments
+    /// * `amount_in` - Exact amount of input token
+    /// * `total_pc_without_take_pnl` - Pool's PC balance (excluding pending PnL)
+    /// * `total_coin_without_take_pnl` - Pool's coin balance (excluding pending PnL)
+    /// * `swap_direction` - Direction of the swap (Coin2PC or PC2Coin)
+    ///
+    /// # Returns
+    /// * `U128` - Amount of output token to be received
     pub fn swap_token_amount_base_in(
         amount_in: U128,
         total_pc_without_take_pnl: U128,
